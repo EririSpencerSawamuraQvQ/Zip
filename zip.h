@@ -5,12 +5,16 @@
 #include<vector>
 #include<math.h>
 #include<fstream>
+#include<unordered_map>
+#include<map>
+#include<ctime>
+#include <iomanip>
 using namespace std;
 
 struct UserInfo {
-	int CardNet;
-	int BListType;
-	int status;
+	string CardNet;
+	string BListType;
+	string status;
 	string CardID;
 };
 
@@ -19,19 +23,339 @@ struct Info {
 	int count;
 };
 
+struct Detail {
+	string CardNet;
+	string BListType;
+};
+
+struct DetailInfo {
+	byte CardID[8];
+	string BListType;
+};
+
+struct ALLINFOS{
+	string CardNet;
+	int CardNetCount;
+	vector<DetailInfo> DetailInfos;
+};
+
+struct ByteArray {
+	byte array[8] = { 0 };
+	friend bool operator < (const struct ByteArray& ls, const struct ByteArray& rs);
+	friend bool operator > (const struct ByteArray& ls, const struct ByteArray& rs);
+	friend bool operator == (const struct ByteArray& ls, const struct ByteArray& rs);
+};
+
+inline bool operator < (const struct ByteArray& ls, const struct ByteArray& rs) {
+
+	bool flag = false;
+	for (int i = 0; i < 8; i++) {
+		if (ls.array[i] < rs.array[i]) {
+			flag = true;
+			break;
+		}
+		else if (ls.array[i] > rs.array[i])
+			break;
+	}
+	return flag;
+}
+
+inline bool operator > (const struct ByteArray& ls, const struct ByteArray& rs) {
+
+	bool flag = false;
+	for (int i = 0; i < 8; i++) {
+		if (ls.array[i] > rs.array[i]) {
+			flag = true;
+			break;
+		}
+		else if (ls.array[i] < rs.array[i])
+			break;
+	}
+	return flag;
+}
+
+inline bool operator == (const struct ByteArray& ls, const struct ByteArray& rs) {
+
+	bool flag = true;
+	for (int i = 0; i < 8; i++) {
+		if (ls.array[i] < rs.array[i]) {
+			flag = false;
+			break;
+		}
+		else if (ls.array[i] > rs.array[i]) {
+			flag = false;
+			break;
+		}
+	}
+	return flag;
+}
+
 class DataZip {
 private:
 	MYSQL mysql;
 	int category;
+	vector<byte> bytes;
+	int bytesLength;
 	vector<Info> cardnets;
 	string index;
+	string tableName = "tbl_paraminfo";//tbl_paraminfo
+	map<ByteArray, vector<Detail>> maps;
+	vector<ALLINFOS> allInfos;
+
+	void sqlconn();			//é“¾æ¥mysqlæ•°æ®åº“
+	byte zip(string str, bool& flag);	//å‹ç¼©æ•°æ®
+	string unzip(int num);
+	void categories();		//å¾—åˆ°cardnetç±»æ•°ä»¥åŠå…¶å€¼ï¼Œå»ºç«‹ç´¢å¼•
 public:
-	void sqlconn();			//Á´½ÓmysqlÊı¾İ¿â
-	byte zip(string str);	//Ñ¹ËõÊı¾İ
-	void categories();		//µÃµ½cardnetÀàÊıÒÔ¼°ÆäÖµ£¬½¨Á¢Ë÷Òı
-	void store();			//½«Ñ¹ËõÊı¾İ´æÈëdatÎÄ¼şÖĞ
-	void check();			//½«Ñ¹ËõÊı¾İ½âÑ¹Ëõ²¢´æÈëtxtÎÄ¼şÖĞ
+	void store();			//å°†å‹ç¼©æ•°æ®å­˜å…¥datæ–‡ä»¶ä¸­
+	void check();			//å°†å‹ç¼©æ•°æ®è§£å‹ç¼©å¹¶å­˜å…¥txtæ–‡ä»¶ä¸­
+	void loadMemory();
+	void search();
 };
+
+
+void DataZip::search() {
+
+	sqlconn();
+	string sql = "";
+	MYSQL_ROW row;
+	MYSQL_RES* res;
+	sql = "SELECT CardID FROM " + tableName + " ORDER BY RAND() LIMIT 100";
+	char* p = _strdup(sql.c_str());
+
+	string tempStr = "";
+	vector<string> strings;
+	int isContinue = 1;
+	ByteArray byteArray;
+	int count = 0;
+	bool errorflag = false;
+	map<ByteArray, vector<Detail>>::iterator got;
+	float start, finish;
+	//float starttotal, finishtotal;
+	float timediff;
+	ofstream outfile("D:/Load.txt", ios::app);
+	vector<Detail> details;
+	ByteArray tempByteArray;
+	int pre = 0;
+	int post = 0;
+	int pos = 0;
+	int lbound = 0;
+	int rbound = -1;
+	bool tempFlag = true;
+	bool isExist = false;
+	int tempInt = 0;
+
+	while (isContinue == 1) {
+		/*mysql_query(&mysql, p);
+		res = mysql_store_result(&mysql);
+		while (row = mysql_fetch_row(res)) {
+			tempStr = row[0];
+			strings.push_back(tempStr);
+		}*/
+
+		cout << "è¾“å…¥æŸ¥è¯¢çš„CardID: ";
+		cin >> tempStr;
+		strings.push_back(tempStr);
+
+		/*starttotal = clock();*/
+		for (int i = 0; i < strings.size(); i++) {
+			start = clock();
+			pre = 0;
+			post = 0;
+			pos = 0;
+			lbound = 0;
+			rbound = -1;
+			tempFlag = true;
+			isExist = false;
+			count = 0;
+
+			tempStr = strings[i];
+			if (tempStr.size() != 16) {
+				cout << tempStr << "è¾“å…¥é”™è¯¯!" << endl;
+				continue;
+			}
+			cout << tempStr << " - ";
+			for (int j = 0; j < (tempStr.size() - 1); j = j + 2)
+				byteArray.array[count++] = zip(tempStr.substr(j, 2), errorflag);
+			
+			for (int j = 0; j < category; j++) {
+				lbound = pre = rbound + 1;
+				rbound = post = pre + cardnets[j].count - 1;
+				while (post >= pre) {
+					pos = ((post + pre) / 2) * 9;
+					for (int k = 0; k < 8; k++) {
+						tempByteArray.array[k] = bytes[pos + k];
+					}
+					if (byteArray > tempByteArray) {
+						pre = (pos / 9) + 1;
+					}
+					else if (byteArray < tempByteArray) {
+						post = (pos / 9) - 1;
+					}
+					else {
+						isExist = true;
+						cout << cardnets[j].cardnet << " - " << (bytes[pos + 8] & 0xff) << "   ";
+
+						tempFlag = true;
+						tempInt = pos;
+						while (tempFlag == true) {
+							pos = pos - 9;
+							if ((pos / 9) < lbound) {
+								tempFlag = false;
+								break;
+							}
+							for (int k = 0; k < 8; k++) {
+								tempByteArray.array[k] = bytes[pos + k];
+							}
+							if (byteArray == tempByteArray) {
+								cout << (bytes[pos + 8] & 0xff) << "   ";
+							}
+							else {
+								tempFlag = false;
+								break;
+							}
+						}
+
+						tempFlag = true;
+						pos = tempInt;
+						while (tempFlag == true) {
+							pos = pos + 9;
+							if ((pos / 9) > rbound) {
+								tempFlag = false;
+								break;
+							}
+							for (int k = 0; k < 8; k++) {
+								tempByteArray.array[k] = bytes[pos + k];
+							}
+							if (byteArray == tempByteArray) {
+								cout << (bytes[pos + 8] & 0xff) << "   ";
+							}
+							else {
+								tempFlag = false;
+								break;
+							}
+						}
+						break;
+					}
+				}
+			}
+			if (isExist == false) {
+				cout << "æ— æ­¤CardID          ";
+				outfile << "æ— æ­¤CardID          ";
+			}
+
+			finish = clock();
+			timediff = (float)(finish - start) / CLOCKS_PER_SEC;
+			cout << strings[i] << "æœç´¢æ—¶é—´: " << timediff << endl;
+			outfile << strings[i] << "æœç´¢æ—¶é—´: " << timediff << endl;
+		}
+		/*finishtotal = clock();
+		timediff = (float)(finishtotal - starttotal) / CLOCKS_PER_SEC;
+		cout << "æ€»æœç´¢æ—¶é—´: " << timediff << endl;
+		outfile << "æ€»æœç´¢æ—¶é—´: " << timediff << endl;*/
+
+		strings.clear();
+
+		cout << "æ˜¯å¦ç»§ç»­(0ç»“æŸï¼Œ1ç»§ç»­): ";
+		cin >> isContinue;
+	}
+
+	//cout << maps.size() << endl;
+	int sizeSum = bytes.size();
+	double kb = (double)sizeSum / 1024;
+	double mb = (double)sizeSum / 1048576;
+	cout << "æ€»å¤§å°: " << sizeSum << "B / " << kb << "KB / " << mb << "MB" << endl;
+	outfile << "æ€»å¤§å°: " << sizeSum << "B / " << kb << "KB / " << mb << "MB" << endl;
+	outfile.close();
+
+}
+
+void DataZip::loadMemory() {
+	//cout << setiosflags(ios::fixed);
+	clock_t start = clock();
+	char tempChar;
+	Info tempInfo;
+	int tempInt = 0;
+	string tempStr = "";
+	string tempStrs = "";
+	byte tempByte;
+	struct ByteArray tempByteArray;
+	int count = 0;
+	int CardNetFlag = 0;
+	Detail tempDetail;
+	bool isBinary = false;
+	string tempCardID;
+	int tempBListType = 0;
+	int tempCardNet = 0;
+	ALLINFOS allInfo;
+	DetailInfo detailInfo;
+
+	ifstream inFile("D:/test.dat", ios::binary);
+	ifstream iInFile("D:/test.dat", ios::in);
+	ofstream outfile("D:/Load.txt", ios::app);
+
+	//è¯»å–datæ–‡ä»¶ä¸­ç´¢å¼•
+	while (iInFile.read((char*)&tempChar, sizeof(char))) {
+		if (tempChar == ':') {
+			tempInfo.cardnet = tempStr;
+			tempInfo.count = 0;
+			cardnets.push_back(tempInfo);
+			tempStr = "";
+			continue;
+		}
+		else if (tempChar == '#') {
+			cardnets[tempInt].count = stoi(tempStr);
+			tempInt++;
+			tempStr = "";
+			continue;
+		}
+		else if (tempChar == '\n') {
+			break;
+		}
+		tempStr = tempStr + tempChar;
+	}
+	category = cardnets.size();
+
+
+	//è¯»å–å‹ç¼©æ•°æ®
+
+	while (inFile.read((char*)&tempByte, sizeof(char))) {
+		//cout << tempB << endl;
+		if (isBinary == false) {
+			if (tempByte == '\n') {
+				isBinary = true;
+				continue;
+			}
+			continue;
+		}
+		bytes.push_back(tempByte);
+	}
+	inFile.close();
+	//cout << "111" << endl;
+	bytesLength = bytes.size();
+	cout << "bytesLength: " << bytesLength << endl;
+	clock_t finish = clock();
+	float timediff = (float)(finish - start) / CLOCKS_PER_SEC;
+	cout << "è¯»å–æ–‡ä»¶æ—¶é—´: " << timediff << endl;
+	outfile << "è¯»å–æ–‡ä»¶æ—¶é—´: " << timediff << endl;
+
+	int flag = 0;
+	cout << "æ˜¯å¦è¿›è¡ŒæŸ¥è¯¢(0å¦ï¼Œ1æ˜¯): ";
+	cin >> flag;
+	if (flag == 1)
+		search();
+
+}
+
+
+void DataZip::sqlconn() {
+	mysql_init(&mysql);
+	mysql_options(&mysql, MYSQL_SET_CHARSET_NAME, "gbk");
+	//    mysql_real_connectå‚æ•°ï¼š2.æœ¬åœ°åœ°å€  3.ä½ çš„mysqlç”¨æˆ·å  4.ä½ çš„mysqlå¯†ç    5.æ•°æ®åº“åå­—  6.ç«¯å£å·
+	if (mysql_real_connect(&mysql, "localhost", "root", "123456", "mydb2", 3306, NULL, 0) == NULL) {
+		cout << (mysql_error(&mysql));
+	}
+}
 
 void DataZip::store() {
 	categories();
@@ -41,18 +365,19 @@ void DataZip::store() {
 	sqlconn();
 
 	string sql = "";
-	byte infos;
-	string strs[3];
+	byte info;
+	string strs[2];
+	int temp = 0;
 	char* p;
 	string str;
-	string temp;
 	MYSQL_ROW row;
+	bool errorflag = false;
 	for (int i = 0; i < category; i++) {
 		cout << i << endl;
 		MYSQL_RES* res;
 		ofstream outfile("D:/test.dat", ios::app | ios::binary);
-		sql = "SELECT * FROM tbl_paraminfo WHERE CardNet = ";
-		sql = sql + cardnets[i].cardnet;//  + " LIMIT" + to_string(pos) + "," + to_string(count)
+		//tbl_paraminfo
+		sql = "SELECT * FROM " + tableName + " WHERE CardNet = " +cardnets[i].cardnet+" ORDER BY CardID ASC";
 		p = _strdup(sql.c_str());
 		mysql_query(&mysql, p);
 		res = mysql_store_result(&mysql);
@@ -60,164 +385,137 @@ void DataZip::store() {
 		{
 			strs[0] = row[1];
 			strs[1] = row[2];
-			strs[2] = row[3];
 
-			if (strs[1].size() == 1)
-				strs[1] = "00" + strs[1];
-			else if (strs[1].size() == 2)
-				strs[1] = "0" + strs[1];
+			str = strs[0];
+			temp = str.size();
 
-			str = strs[0] + strs[1] + strs[2];
-			string str2;
-			int b = 0;
-			for (int i = 0; i < 19; i = i + 2) {
-				str2 = "";
-				temp = str.substr(i, 2);
-				infos = zip(temp);
-				outfile.write((char*)&infos, sizeof(infos));
+			for (int i = 0; i < (temp - 1); i = i + 2) {
+				info = zip(str.substr(i, 2), errorflag);
+				outfile.write((char*)&info, sizeof(info));
 			}
-			strs[0] = "";
-			strs[1] = "";
-			strs[2] = "";
-			str = "";
-			temp = "";
+			if (errorflag == true) {
+				cout << str << endl;
+				errorflag = false;
+			}
+			temp = stoi(strs[1]);
+			info = (byte)(temp & 0xff);
+			outfile.write((char*)&info, sizeof(info));
 		}
 		outfile.close();
 		mysql_free_result(res);
-			
-		
+
+
 	}
 	mysql_close(&mysql);
-	
+
 }
 
 void DataZip::check() {
-	ifstream iInFile("D:test.dat", ios::in);
-	if (!iInFile) {
-		cout << "error" << endl;
-		return;
-	}
-	char temp;
-	string str="";
+
+	char tempChar;
+	Info tempInfo;
+	string tempStr = "";
+	string tempStrs = "";
+	int tempInt = 0;
 	int count = 0;
-	//¶ÁÈ¡datÎÄ¼şÖĞË÷Òı
-	while (iInFile.read((char*)&temp, sizeof(char))) {
-		if (temp == ':') {
-			Info inf;
-			inf.cardnet = str;
-			inf.count = 0;
-			cardnets.push_back(inf);
-			str = "";
-			continue;
-		}
-		else if (temp == '#') {
-			cardnets[count].count = stoi(str);
-			count++;
-			str = "";
-			continue;
-		}
-		else if (temp == '\n') {
-			break;
-		}
-		str = str + temp;
-	}
-	category = cardnets.size();
-	//¶ÁÈ¡Ñ¹ËõÊı¾İ
-	ifstream inFile("D:test.dat", ios::binary);
-	if (!inFile) {
-		cout << "error" << endl;
-		return;
-	}
-	byte tempB;
-	int num;
-	str = "";
-	string sum = "";
-	int flag = 0;
-	int sumflag = 1;
+	int CardNetFlag = 0;
+	byte tempByte;
 	UserInfo uinfo;
 	bool isBinary = false;
+
+	ifstream iInFile("D:/test.dat", ios::in);
+	ifstream inFile("D:/test.dat", ios::binary);
 	ofstream outfile("D:/return.txt", ios::app);
-	while (inFile.read((char*)&tempB, sizeof(char))) {
+
+	//è¯»å–datæ–‡ä»¶ä¸­ç´¢å¼•
+	while (iInFile.read((char*)&tempChar, sizeof(char))) {
+		if (tempChar == ':') {
+			
+			tempInfo.cardnet = tempStr;
+			tempInfo.count = 0;
+			cardnets.push_back(tempInfo);
+			tempStr = "";
+			continue;
+		}
+		else if (tempChar == '#') {
+			cardnets[count].count = stoi(tempStr);
+			count++;
+			tempStr = "";
+			continue;
+		}
+		else if (tempChar == '\n') {
+			break;
+		}
+		tempStr = tempStr + tempChar;
+	}
+	category = cardnets.size();
+	//è¯»å–å‹ç¼©æ•°æ®
+	iInFile.close();
+
+	while (inFile.read((char*)&tempByte, sizeof(char))) {
 		//cout << tempB << endl;
-		if (isBinary == false && tempB == '\n') {
-			isBinary = true;
-			continue;
-		}
-		if (isBinary == false)
-			continue;
-		num = tempB & 0xFF;
-		str = str + to_string(num);
-		if (str.size() == 1)
-			str = "0" + str;
-		else if (str.size() == 0)
-			str = "00" + str;
-		sum = sum + str;
-		str = "";
-		flag++;
-		if (flag == 10) {
-			int cou = 0;
-			for (int i = 0; i < category; i++) {
-				cou = cou + cardnets[i].count;
-				if (sumflag <= cou) {
-					uinfo.CardNet = stoi(cardnets[i].cardnet);
-					break;
-				}
+		if (isBinary == false) {
+			if (tempByte == '\n') {
+				isBinary = true;
+				continue;
 			}
-			uinfo.CardID= sum.substr(0, 16);
-			uinfo.BListType = stoi(sum.substr(16, 3));
-			uinfo.status = stoi(sum.substr(19, 1));
-			cout << uinfo.CardNet << " " << uinfo.CardID << " " << uinfo.BListType << " " << uinfo.status << endl;
-			outfile << uinfo.CardNet << " " << uinfo.CardID << " " << uinfo.BListType << " " << uinfo.status << endl;
-			sum = "";
-			flag = 0;
-			sumflag++;
+			continue;
 		}
+		bytes.push_back(tempByte);
 	}
 	inFile.close();
-	outfile.close();
-}
-
-void DataZip::sqlconn() {
-	mysql_init(&mysql);
-	mysql_options(&mysql, MYSQL_SET_CHARSET_NAME, "gbk");
-	//    mysql_real_connect²ÎÊı£º2.±¾µØµØÖ·  3.ÄãµÄmysqlÓÃ»§Ãû  4.ÄãµÄmysqlÃÜÂë   5.Êı¾İ¿âÃû×Ö  6.¶Ë¿ÚºÅ
-	if (mysql_real_connect(&mysql, "localhost", "root", "123456", "mydb", 3306, NULL, 0) == NULL) {
-		cout << (mysql_error(&mysql));
+	bytesLength = bytes.size();
+	count = 0;
+	for (int i = 0; i < bytesLength; i = i + 9) {
+		tempStrs = "";
+		for (int j = 0; j < 8; j++) {
+			tempInt = bytes[(j + i)] & 0xff;
+			tempStrs += unzip(tempInt);
+		}
+		tempInt = bytes[(i + 8)] & 0xff;
+		uinfo.BListType = to_string(tempInt);
+		uinfo.CardID = tempStrs;
+		uinfo.CardNet = cardnets[CardNetFlag].cardnet;
+		count++;
+		if (count >= cardnets[CardNetFlag].count) {
+			CardNetFlag++;
+			count = 0;
+			//cout << CardNetFlag << endl;
+		}
+		cout << uinfo.CardNet << " " << uinfo.CardID << " " << uinfo.BListType << endl;
+		outfile << uinfo.CardNet << " " << uinfo.CardID << " " << uinfo.BListType << endl;
 	}
-}
 
-byte DataZip::zip(string str) {
-	byte temp;
-	int num = 0;
-	num = str[0] - '0';
-	num = num * 10 + (str[1] - '0');
-	temp = (byte)(num & 0xff);
-	return temp;
+
+
+	outfile.close();
+
 }
 
 void DataZip::categories() {
 	sqlconn();
 	string sql = "";
-	
+
 	MYSQL_ROW row;
 	MYSQL_RES* res;
-	sql = "SELECT DISTINCT cardnet FROM tbl_paraminfo";
+	//tbl_paraminfo
+	sql = "SELECT DISTINCT cardnet FROM " + tableName + " ORDER BY CardNet ASC";
 	char* p = _strdup(sql.c_str());
 	mysql_query(&mysql, p);
 	res = mysql_store_result(&mysql);
 	string str = "";
-	Info inf;
+	Info tempInfo;
 	while (row = mysql_fetch_row(res)) {
 		str = row[0];
-		inf.cardnet = str;
-		inf.count = 0;
-		cardnets.push_back(inf);
+		tempInfo.cardnet = str;
+		tempInfo.count = 0;
+		cardnets.push_back(tempInfo);
 	}
 	category = cardnets.size();
-	
+
 	for (int i = 0; i < category; i++) {
-		sql = "select COUNT(*) from tbl_paraminfo where CardNet = ";
-		sql = sql + cardnets[i].cardnet;
+		//tbl_paraminfo
+		sql = "select COUNT(*) from " + tableName + " where CardNet = "+ cardnets[i].cardnet;
 		p = _strdup(sql.c_str());
 		mysql_query(&mysql, p);
 		res = mysql_store_result(&mysql);
@@ -227,8 +525,6 @@ void DataZip::categories() {
 		}
 		//cout << i << endl;
 	}
-	/*for (int i = 0; i < category; i++)
-		cout << cardnets[i].cardnet << ":" << cardnets[i].count << endl;*/
 	mysql_free_result(res);
 	mysql_close(&mysql);
 	index = "";
@@ -237,3 +533,49 @@ void DataZip::categories() {
 	}
 	cout << index << endl;
 }
+
+byte DataZip::zip(string str, bool& flag) {
+	byte tempByte;
+	int num = 0;
+	int temp = 0;
+	for (int i = 0; i < 2; i++) {
+		if (str[i] - '0' >= 0 && str[i] - '0' <= 9) {
+			temp = str[i] - '0';
+			num = (num << 4) | (temp & 0xf);
+		}
+		else if (str[i] - 'a' >= 0 && str[i] - 'a' <= 5) {
+			temp = 10 + (str[i] - 'a');
+			num = (num << 4) | (temp & 0xf);
+		}
+		else if (str[i] - 'A' >= 0 && str[i] - 'A' <= 5) {
+			temp = 10 + (str[i] - 'A');
+			num = (num << 4) | (temp & 0xf);
+		}
+		else {
+			cout << "error:" << str << endl;
+			flag = true;
+		}
+	}
+
+	tempByte = (byte)(num & 0xff);
+	return tempByte;
+}
+
+string DataZip::unzip(int num) {
+	string str = "";
+	int temp[2];
+	temp[0] = (num >> 4) & 0xf;
+	temp[1] = num & 0xf;
+	for (int i = 0; i < 2; i++) {
+		if (temp[i] >= 0 && temp[i] <= 9) {
+			str = str + to_string(temp[i]);
+		}
+		else if (temp[i] >= 10 && temp[i] <= 15) {
+			char t = 'A';
+			t = t + (temp[i] - 10);
+			str = str + t;
+		}
+	}
+	return str;
+}
+
